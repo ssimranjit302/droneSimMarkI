@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DAMS Drone Simulator</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<script src="physics.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e17;color:#e0e6ed;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden;height:100vh}
+h1{text-align:center;padding:10px;font-size:1.1em;background:linear-gradient(135deg,#0f1923,#1a2744);border-bottom:1px solid #2a3f5f;letter-spacing:1px}
+h1 span{color:#4fc3f7}
+.wrap{display:grid;grid-template-columns:1fr 1fr 280px;grid-template-rows:1fr 1fr 220px;gap:6px;padding:6px;height:calc(100vh - 44px)}
+canvas{background:#0d1220;border:1px solid #1e3050;border-radius:4px;width:100%;height:100%}
+.panel{background:#0d1220;border:1px solid #1e3050;border-radius:4px;padding:8px;overflow-y:auto}
+.panel h3{font-size:.75em;color:#4fc3f7;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:3px}
+.stats-section-label{grid-column:1/-1;font-size:8px;font-weight:700;color:#6ec6ff;text-transform:uppercase;letter-spacing:1px;padding:3px 0 1px;border-top:1px solid rgba(110,198,255,0.15);margin-top:2px}
+.stat{background:#111a2e;padding:5px 6px;border-radius:3px;font-size:.72em}
+.stat .val{font-size:1.15em;font-weight:700;color:#4fc3f7}
+.stat .lbl{color:#7a8ba5;font-size:.85em}
+.stat.warn .val{color:#ff6b6b}
+.stat.good .val{color:#51cf66}
+.ctrl{margin-bottom:6px}
+.ctrl label{display:flex;justify-content:space-between;font-size:.68em;color:#7a8ba5;margin-bottom:1px}
+.ctrl label span{color:#4fc3f7;font-weight:600}
+input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:#1e3050;border-radius:2px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#4fc3f7;cursor:pointer}
+.btn-row{display:flex;gap:4px;margin-bottom:6px}
+button{flex:1;padding:5px;border:1px solid #2a3f5f;background:#111a2e;color:#e0e6ed;border-radius:3px;cursor:pointer;font-size:.7em;font-weight:600}
+button:hover{background:#1a2744}
+button.active{background:#4fc3f7;color:#0a0e17;border-color:#4fc3f7}
+.toggle-row{display:flex;gap:4px;margin-bottom:6px}
+.toggle{flex:1;padding:4px;text-align:center;border:1px solid #2a3f5f;border-radius:3px;font-size:.65em;cursor:pointer;font-weight:600}
+.toggle.on{background:#51cf66;color:#0a0e17;border-color:#51cf66}
+.toggle.off{background:#ff6b6b;color:#0a0e17;border-color:#ff6b6b}
+.sep{border-top:1px solid #1e3050;margin:6px 0}
+.lambda-line{color:#ff6b6b;font-size:.6em;text-align:center;margin-top:3px}
+.preset-row{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:6px}
+.preset{padding:4px;text-align:center;border:1px solid #2a3f5f;border-radius:3px;font-size:.6em;cursor:pointer;font-weight:600}
+.preset:hover{background:#1a2744}
+#topView{grid-column:1;grid-row:1}
+#sideWrap{grid-column:1;grid-row:2}
+#plotPos{grid-column:2;grid-row:1}
+#plotAtt{grid-column:2;grid-row:2}
+#controls{grid-column:3;grid-row:1/4}
+#statsBar{grid-column:1/3;grid-row:3;display:flex;gap:6px;align-items:stretch;min-height:0;overflow:hidden}
+#driftStats{flex:3;overflow:hidden}
+#motorPanel{flex:1;overflow:hidden}
+#motorCanvas{height:calc(100% - 22px)}
+.canvas-wrap{position:relative;width:100%;height:100%}
+.canvas-wrap canvas{position:absolute;top:0;left:0}
+.zoom-btns{position:absolute;bottom:6px;right:6px;display:flex;gap:4px;z-index:2}
+.zbtn{padding:3px 8px;font-size:10px;font-weight:700;background:rgba(79,195,247,0.2);color:#4fc3f7;border:1px solid rgba(79,195,247,0.4);border-radius:3px;cursor:pointer;flex:none}
+.zbtn:hover{background:rgba(79,195,247,0.35)}
+.zbtn.active{background:rgba(81,207,102,0.3);color:#51cf66;border-color:rgba(81,207,102,0.5)}
+#zoomWrap{display:none}
+</style>
+</head>
+<body>
+<h1>DAMS <span>Drone Physics Simulator</span> — Enord Inspector Lite</h1>
+<div class="wrap">
+<canvas id="topView"></canvas>
+<div class="canvas-wrap" id="sideWrap">
+<canvas id="sideView"></canvas>
+<div class="zoom-btns" id="zoomWrap">
+<button class="zbtn" id="zoomBtn" onclick="toggleZoomAUT()">Zoom AUT</button>
+<button class="zbtn" id="zoomDroneBtn" onclick="toggleZoomDrone()">Zoom Drone</button>
+</div>
+</div>
+<canvas id="plotPos"></canvas>
+<canvas id="plotAtt"></canvas>
+<div id="controls" class="panel">
+<h3>⚙ Simulation Controls</h3>
+<div class="btn-row">
+<button id="btnPlay" class="active" onclick="togglePlay()">▶ Play</button>
+<button onclick="resetSim()">⟲ Reset</button>
+<button onclick="saveCSV()" style="background:#1a4a2e;border-color:#51cf66"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px;margin-right:3px"><rect x="1" y="1" width="14" height="14" rx="1" stroke="#51cf66" stroke-width="1.5" fill="none"/><rect x="4" y="1" width="8" height="5" rx="0.5" stroke="#51cf66" stroke-width="1" fill="none"/><rect x="8" y="2" width="2" height="3" rx="0.3" fill="#51cf66"/><rect x="3" y="9" width="10" height="5" rx="0.5" stroke="#51cf66" stroke-width="1" fill="none"/></svg>Save Log</button>
+</div>
+<div class="ctrl"><label>Speed <span id="vSpeed">1×</span></label>
+<input type="range" min="1" max="10" value="1" step="1" oninput="simSpeed=+this.value;qs('#vSpeed').textContent=this.value+'×'"></div>
+<div class="sep"></div>
+<h3>Sensor Config</h3>
+<div class="toggle-row">
+<div class="toggle on" id="tGPS" onclick="toggleGPS(this)">GPS: RTK</div>
+<div class="toggle on" id="tCompass" onclick="toggleCompass(this)">Compass: Good</div>
+</div>
+<div class="sep"></div>
+<h3>Wind</h3>
+<div class="ctrl"><label>Steady Speed <span id="vWind">0.0</span> m/s</label>
+<input type="range" min="0" max="10" value="0" step="0.1" oninput="sim.wind.steadySpeed=+this.value;qs('#vWind').textContent=(+this.value).toFixed(1)"></div>
+<div class="ctrl"><label>Direction <span id="vWDir">0</span>°</label>
+<input type="range" min="0" max="360" value="0" step="5" oninput="sim.wind.steadyDir=+this.value*Math.PI/180;qs('#vWDir').textContent=this.value"></div>
+<div class="ctrl"><label>Gust <span id="vGust">0.0</span> m/s</label>
+<input type="range" min="0" max="5" value="0" step="0.1" oninput="sim.wind.gustIntensity=+this.value;qs('#vGust').textContent=(+this.value).toFixed(1)"></div>
+<div class="sep"></div>
+<h3>Position PID</h3>
+<div class="ctrl"><label>Pos XY P <span id="vPxyP">0.6</span></label>
+<input type="range" min="0.1" max="5" value="0.6" step="0.1" oninput="sim.fc.setGains({posXY_P:+this.value});qs('#vPxyP').textContent=(+this.value).toFixed(1)"></div>
+<div class="ctrl"><label>Vel XY P <span id="vVxyP">0.8</span></label>
+<input type="range" min="0.1" max="8" value="0.8" step="0.1" oninput="sim.fc.setGains({velXY_P:+this.value});qs('#vVxyP').textContent=(+this.value).toFixed(1)"></div>
+<div class="ctrl"><label>Vel XY I <span id="vVxyI">0.05</span></label>
+<input type="range" min="0" max="3" value="0.05" step="0.05" oninput="sim.fc.setGains({velXY_I:+this.value});qs('#vVxyI').textContent=(+this.value).toFixed(2)"></div>
+<div class="ctrl"><label>Vel XY D <span id="vVxyD">0.08</span></label>
+<input type="range" min="0" max="2" value="0.08" step="0.05" oninput="sim.fc.setGains({velXY_D:+this.value});qs('#vVxyD').textContent=(+this.value).toFixed(2)"></div>
+<div class="sep"></div>
+<h3>Altitude PID</h3>
+<div class="ctrl"><label>Pos Z P <span id="vPzP">0.6</span></label>
+<input type="range" min="0.1" max="5" value="0.6" step="0.1" oninput="sim.fc.setGains({posZ_P:+this.value});qs('#vPzP').textContent=(+this.value).toFixed(1)"></div>
+<div class="ctrl"><label>Vel Z P <span id="vVzP">1.0</span></label>
+<input type="range" min="0.1" max="8" value="1.0" step="0.1" oninput="sim.fc.setGains({velZ_P:+this.value});qs('#vVzP').textContent=(+this.value).toFixed(1)"></div>
+<div class="ctrl"><label>Vel Z I <span id="vVzI">0.05</span></label>
+<input type="range" min="0" max="3" value="0.05" step="0.05" oninput="sim.fc.setGains({velZ_I:+this.value});qs('#vVzI').textContent=(+this.value).toFixed(2)"></div>
+<div class="sep"></div>
+<h3>Payload</h3>
+<div class="ctrl"><label>Mass <span id="vPL">775</span> g</label>
+<input type="range" min="0" max="1500" value="775" step="25" oninput="DRONE.massPayload=+this.value/1000;qs('#vPL').textContent=this.value"></div>
+<div class="ctrl"><label>Offset X <span id="vPLx">0</span> cm</label>
+<input type="range" min="-5" max="5" value="0" step="0.5" oninput="DRONE.payloadOffsetX=+this.value/100;qs('#vPLx').textContent=this.value"></div>
+<div class="sep"></div>
+<h3>Target Position</h3>
+<div class="ctrl"><label>Altitude <span id="vAlt">5.8</span> m</label>
+<input type="range" min="2" max="20" value="5.8" step="0.1" oninput="sim.fc.targetPos.z=-this.value;qs('#vAlt').textContent=this.value"></div>
+<div class="sep"></div>
+<h3>Presets</h3>
+<div class="preset-row">
+<div class="preset" onclick="presetOriginal()">Original Flight</div>
+<div class="preset" onclick="presetRTK()">RTK + Fix</div>
+</div>
+</div>
+<div id="statsBar">
+<div id="driftStats" class="panel"><h3>Live Drift Statistics (λ/16 = 3.47 mm @ 5.4 GHz)</h3><div class="stats-grid" id="statsGrid"></div></div>
+<div id="motorPanel" class="panel"><h3> Motors</h3><canvas id="motorCanvas"></canvas></div>
+</div>
+</div>
+<script>
+const qs=s=>document.querySelector(s);
+const sim = new QuadSim();
+let playing = true, simSpeed = 1;
+sim.fc.targetPos = {x:0, y:0, z:-6};
+
+// Canvas setup
+function setupCanvas(id) {
+  const c = document.getElementById(id);
+  const r = c.getBoundingClientRect();
+  c.width = r.width * 2; c.height = r.height * 2;
+  const ctx = c.getContext('2d'); ctx.scale(2,2);
+  return {c, ctx, w: r.width, h: r.height};
+}
+let cvTop, cvSide, cvPos, cvAtt, cvMotor;
+let view3dZoom = false; // false, 'aut', or 'drone'
+function toggleZoomAUT() {
+  view3dZoom = view3dZoom === 'aut' ? false : 'aut';
+  qs('#zoomBtn').className = view3dZoom === 'aut' ? 'zbtn active' : 'zbtn';
+  qs('#zoomDroneBtn').className = 'zbtn';
+}
+function toggleZoomDrone() {
+  view3dZoom = view3dZoom === 'drone' ? false : 'drone';
+  qs('#zoomDroneBtn').className = view3dZoom === 'drone' ? 'zbtn active' : 'zbtn';
+  qs('#zoomBtn').className = 'zbtn';
+}
+function initCanvases() {
+  cvTop = setupCanvas('topView');
+  cvSide = setupCanvas('sideView');
+  cvPos = setupCanvas('plotPos');
+  cvAtt = setupCanvas('plotAtt');
+  cvMotor = setupCanvas('motorCanvas');
+}
+
+// ── Drawing Functions ──────────────────────────────────────────────
+function drawTopView() {
+  const {ctx,w,h} = cvTop;
+  ctx.clearRect(0,0,w,h);
+  // Grid
+  const scale = 8; // pixels per meter
+  const cx = w/2, cy = h/2;
+  ctx.strokeStyle = '#1a2744'; ctx.lineWidth = 0.5;
+  for(let i=-50;i<=50;i+=1) {
+    const px=cx+i*scale, py=cy+i*scale;
+    if(px>0&&px<w){ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,h);ctx.stroke();}
+    if(py>0&&py<h){ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(w,py);ctx.stroke();}
+  }
+  // 5m grid lines
+  ctx.strokeStyle='#1e3050';ctx.lineWidth=1;
+  for(let i=-50;i<=50;i+=5){
+    const px=cx+i*scale,py=cy+i*scale;
+    if(px>0&&px<w){ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,h);ctx.stroke();}
+    if(py>0&&py<h){ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(w,py);ctx.stroke();}
+  }
+  // Target crosshair
+  // NED: X=North→screen up(-Y), Y=East→screen right(+X)
+  const tx=cx+sim.fc.targetPos.y*scale, ty=cy-sim.fc.targetPos.x*scale;
+  ctx.strokeStyle='#ff6b6b55';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(tx-15,ty);ctx.lineTo(tx+15,ty);ctx.moveTo(tx,ty-15);ctx.lineTo(tx,ty+15);ctx.stroke();
+  // λ/16 circle
+  const lam16px = 0.00347*scale;
+  ctx.strokeStyle='#ff6b6b33';ctx.beginPath();ctx.arc(tx,ty,Math.max(lam16px,2),0,Math.PI*2);ctx.stroke();
+  // Trail (segment-by-segment: red during burst, cyan normal)
+  ctx.lineWidth=1.5;
+  for(let i=1;i<sim.history.length;i++){
+    const h0=sim.history[i-1], h1=sim.history[i];
+    const x0=cx+h0.y*scale, y0=cy-h0.x*scale;
+    const x1=cx+h1.y*scale, y1=cy-h1.x*scale;
+    ctx.strokeStyle = h1.burst ? '#ff4444cc' : '#4fc3f740';
+    ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.stroke();
+  }
+  // Drone position
+  const s=sim.state;
+  const dx=cx+s.y*scale, dy=cy-s.x*scale;
+  // Drone body
+  ctx.save();ctx.translate(dx,dy);ctx.rotate(s.yaw);
+  const arm=DRONE.armLength*scale;
+  ctx.strokeStyle='#4fc3f7';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(-arm,-arm);ctx.lineTo(arm,arm);ctx.moveTo(arm,-arm);ctx.lineTo(-arm,arm);ctx.stroke();
+  // Motor circles
+  const mColors = sim.motorActual.map(v=>`hsl(${120-v*120},80%,50%)`);
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([mx,my],i)=>{
+    ctx.fillStyle=mColors[i];ctx.beginPath();ctx.arc(mx*arm,my*arm,3,0,Math.PI*2);ctx.fill();
+  });
+  // Heading indicator
+  ctx.strokeStyle='#51cf66';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,-arm*1.2);ctx.stroke();
+  ctx.restore();
+  // Wind vector
+  if(sim.wind.steadySpeed>0){
+    const wl=sim.wind.steadySpeed*5;
+    const wa=-sim.wind.steadyDir+Math.PI;
+    ctx.save();ctx.translate(40,h-30);ctx.rotate(wa);
+    ctx.strokeStyle='#81d4fa';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,-wl);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(-3,-wl+5);ctx.lineTo(0,-wl);ctx.lineTo(3,-wl+5);ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle='#81d4fa';ctx.font='9px sans-serif';ctx.fillText('Wind',25,h-10);
+  }
+  // Labels
+  ctx.fillStyle='#4fc3f7';ctx.font='bold 10px sans-serif';
+  ctx.fillText('Top View',5,12);
+  ctx.fillStyle='#7a8ba5';ctx.font='9px sans-serif';
+  ctx.fillText(`${sim.t.toFixed(1)}s`,5,23);
+  ctx.fillText('N↑',cx-5,12);ctx.fillText('E→',w-15,cy+4);
+  ctx.fillText(`X(N):${s.x.toFixed(2)}m Y(E):${s.y.toFixed(2)}m Alt:${(-s.z).toFixed(2)}m`,5,h-5);
+  // Scale bar
+  ctx.strokeStyle='#7a8ba5';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(w-60,h-15);ctx.lineTo(w-60+5*scale,h-15);ctx.stroke();
+  ctx.fillText('5m',w-50,h-5);
+}
+
+function drawPlot(cv, title, series, timeWindow) {
+  const {ctx,w,h}=cv;
+  ctx.clearRect(0,0,w,h);
+  if(sim.history.length<2)return;
+  const tNow=sim.t;
+  const tMin=tNow-timeWindow, tMax=tNow;
+  const margin={l:40,r:10,t:20,b:18};
+  const pw=w-margin.l-margin.r, ph=h-margin.t-margin.b;
+  // Background
+  ctx.fillStyle='#0d1220';ctx.fillRect(0,0,w,h);
+  // Title
+  ctx.fillStyle='#4fc3f7';ctx.font='bold 9px sans-serif';ctx.fillText(title,margin.l,12);
+  // Find y range
+  let yMin=Infinity,yMax=-Infinity;
+  series.forEach(s=>{
+    sim.history.forEach(h=>{
+      if(h.t>=tMin){const v=s.fn(h);if(v<yMin)yMin=v;if(v>yMax)yMax=v;}
+    });
+  });
+  const yPad=(yMax-yMin)*0.15||1;yMin-=yPad;yMax+=yPad;
+  // Grid
+  ctx.strokeStyle='#1a2744';ctx.lineWidth=0.5;
+  for(let i=0;i<=4;i++){
+    const y=margin.t+ph*i/4;
+    ctx.beginPath();ctx.moveTo(margin.l,y);ctx.lineTo(margin.l+pw,y);ctx.stroke();
+    ctx.fillStyle='#5a6a80';ctx.font='8px sans-serif';
+    ctx.fillText((yMax-(yMax-yMin)*i/4).toFixed(2),2,y+3);
+  }
+  // Zero line
+  if(yMin<0&&yMax>0){
+    const zy=margin.t+ph*(yMax/(yMax-yMin));
+    ctx.strokeStyle='#2a3f5f';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(margin.l,zy);ctx.lineTo(margin.l+pw,zy);ctx.stroke();
+  }
+  // Series
+  series.forEach(s=>{
+    ctx.strokeStyle=s.color;ctx.lineWidth=1.5;ctx.beginPath();
+    let first=true;
+    sim.history.forEach(h=>{
+      if(h.t<tMin)return;
+      const px=margin.l+pw*(h.t-tMin)/(tMax-tMin);
+      const py=margin.t+ph*(1-(s.fn(h)-yMin)/(yMax-yMin));
+      first?(ctx.moveTo(px,py),first=false):ctx.lineTo(px,py);
+    });
+    ctx.stroke();
+  });
+  // Legend
+  let lx=margin.l+5;
+  series.forEach(s=>{
+    ctx.fillStyle=s.color;ctx.fillRect(lx,h-12,12,3);
+    ctx.fillStyle='#7a8ba5';ctx.font='8px sans-serif';
+    ctx.fillText(s.label,lx+15,h-8);
+    lx+=ctx.measureText(s.label).width+25;
+  });
+}
+
+function drawMotors() {
+  const {ctx,w,h}=cvMotor;
+  ctx.clearRect(0,0,w,h);
+  const labels=['M1','M2','M3','M4'];
+  const topY=4, botY=h*0.78, labelY=h*0.95;
+  const bw=w/6.5, gap=w/13;
+  sim.motorActual.forEach((v,i)=>{
+    const x=w*0.08+i*(bw+gap);
+    const barH=v*(botY-topY);
+    const hue=120-v*120;
+    ctx.fillStyle=`hsl(${hue},70%,45%)`;
+    ctx.fillRect(x,botY-barH,bw,barH);
+    ctx.strokeStyle='#2a3f5f';ctx.strokeRect(x,topY,bw,botY-topY);
+    ctx.fillStyle='#7a8ba5';ctx.font='7px sans-serif';
+    ctx.fillText(labels[i],x+bw/2-6,labelY);
+    ctx.fillStyle='#e0e6ed';ctx.font='bold 9px sans-serif';
+    const pctTxt=(v*100).toFixed(0)+'%';
+    const tw=ctx.measureText(pctTxt).width;
+    ctx.fillText(pctTxt,x+bw/2-tw/2,botY-barH/2+3);
+  });
+}
+
+function drawSideView() {
+  const {ctx,w,h} = cvSide;
+  ctx.clearRect(0,0,w,h);
+  const s = sim.state;
+  const alt = -s.z, pitch = s.pitch, roll = s.roll;
+  const yawDeg = ((s.yaw*180/Math.PI)+360)%360;
+
+  // ── 3D Perspective Projection ──
+  // Camera from South, elevated ~25°, looking North
+  // NED: X=North(into screen), Y=East(right), Z=Down
+  const horizonY = h * 0.35;
+  const baseY = h * 0.88; // ground plane bottom edge (closest to camera)
+  const cx = w * 0.5;     // screen center X
+
+  // Project 3D NED → 2D screen
+  // depth: x=0 at baseY, x>0 (north) moves toward horizon
+  // Zoom: center on AUT (0,0) or drone position
+  const isDroneZoom = view3dZoom === 'drone';
+  const isZoomed = !!view3dZoom;
+  const zc = isDroneZoom ? {x: s.x, y: s.y} : {x: 0, y: 0};
+  function proj(x, y, z_alt) {
+    const maxD = isZoomed ? 0.15 : 5;
+    const ofs = isZoomed ? 0.075 : 2.5;
+    const rx = x - zc.x, ry = y - zc.y;
+    const rz = isDroneZoom ? z_alt - alt : z_alt;
+    const t = Math.max(0, Math.min(0.85, (rx + ofs) / maxD));
+    const gY = baseY + (horizonY - baseY) * t;
+    const sc = 1.0 - t * 0.6;
+    const pxM = (baseY - horizonY) / maxD;
+    const altPxM = isZoomed ? (baseY - horizonY) / 1.5 : pxM;
+    return {
+      sx: cx + ry * pxM * sc * 1.4,
+      sy: gY - rz * altPxM * sc,
+      gy: gY,
+      sc: sc
+    };
+  }
+
+  // ── Sky gradient ──
+  const sky = ctx.createLinearGradient(0,0,0,h);
+  sky.addColorStop(0,'#060d1a'); sky.addColorStop(0.4,'#0d1e38'); sky.addColorStop(1,'#152a20');
+  ctx.fillStyle = sky; ctx.fillRect(0,0,w,h);
+
+  // ── Ground plane (perspective grid) ──
+  // Fill ground below horizon
+  ctx.fillStyle = '#0f1f10';
+  ctx.beginPath(); ctx.moveTo(0,horizonY); ctx.lineTo(w,horizonY);
+  ctx.lineTo(w,h); ctx.lineTo(0,h); ctx.closePath(); ctx.fill();
+
+  // Grid lines: East-West (horizontal, converging to horizon)
+  ctx.strokeStyle = 'rgba(58,90,32,0.4)'; ctx.lineWidth = 0.5;
+  for (let xm = -5; xm <= 10; xm++) {
+    const p = proj(xm, -10, 0), p2 = proj(xm, 10, 0);
+    ctx.beginPath(); ctx.moveTo(p.sx,p.gy); ctx.lineTo(p2.sx,p2.gy); ctx.stroke();
+  }
+  // Grid lines: North-South (converging to vanishing point)
+  for (let ym = -8; ym <= 8; ym += 2) {
+    const pN = proj(-3, ym, 0), pF = proj(10, ym, 0);
+    ctx.beginPath(); ctx.moveTo(pN.sx,pN.gy); ctx.lineTo(pF.sx,pF.gy); ctx.stroke();
+  }
+
+  // Axis labels + scale marks
+  ctx.fillStyle='#3a5a20'; ctx.font='7px sans-serif'; ctx.textAlign='center';
+  if (isZoomed) {
+    // cm ticks at fixed world positions (origin-centered), both zoom modes share same grid
+    ctx.strokeStyle='#4a6a30'; ctx.lineWidth=1;
+    // East-West ticks at x=0
+    for(let cm=-8;cm<=8;cm++){
+      if(cm===0) continue;
+      const pm = proj(0, cm*0.01, 0);
+      ctx.beginPath();ctx.moveTo(pm.sx,pm.gy-3);ctx.lineTo(pm.sx,pm.gy+3);ctx.stroke();
+    }
+    // North-South ticks at y=0
+    for(let cm=-8;cm<=8;cm++){
+      if(cm===0) continue;
+      const pm = proj(cm*0.01, 0, 0);
+      ctx.beginPath();ctx.moveTo(pm.sx-3,pm.gy);ctx.lineTo(pm.sx+3,pm.gy);ctx.stroke();
+    }
+    // Origin crosshair + label
+    const pc = proj(0, 0, 0);
+    ctx.strokeStyle='#5a8a4088'; ctx.lineWidth=0.5;
+    ctx.beginPath();ctx.moveTo(pc.sx-25,pc.gy);ctx.lineTo(pc.sx+25,pc.gy);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(pc.sx,pc.gy-12);ctx.lineTo(pc.sx,pc.gy+12);ctx.stroke();
+    ctx.fillStyle='#5a8a40'; ctx.font='bold 7px sans-serif'; ctx.textAlign='left';
+    // Scale bar (like top view): 1cm line + label, above zoom buttons
+    const p0 = proj(0, 0, 0);
+    const p1 = proj(0, 0.01, 0);
+    const barPx = Math.abs(p1.sx - p0.sx);
+    const sbx = w - barPx - 15, sby = h - 45;
+    ctx.strokeStyle='#7a8ba5'; ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(sbx,sby);ctx.lineTo(sbx+barPx,sby);ctx.stroke();
+    ctx.fillStyle='#7a8ba5'; ctx.font='9px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('1cm',sbx+barPx/2,sby-4);
+  } else {
+    const pNlbl = proj(6,0,0), pElbl = proj(0,5,0);
+    ctx.fillText('N ↑',pNlbl.sx,pNlbl.gy-3);
+    ctx.fillText('E →',pElbl.sx+8,pElbl.gy);
+    // Scale marks on ground (East-West at x=0)
+    ctx.fillStyle='#4a6a30'; ctx.font='6px sans-serif';
+    for(let m=-4;m<=4;m++){
+      if(m===0) continue;
+      const pm=proj(0,m,0);
+      ctx.beginPath();ctx.moveTo(pm.sx,pm.gy-2);ctx.lineTo(pm.sx,pm.gy+2);ctx.stroke();
+      ctx.fillText(m+'m',pm.sx,pm.gy+8);
+    }
+    // Scale marks (North-South at y=0)
+    for(let m=1;m<=6;m+=2){
+      const pm=proj(m,0,0);
+      ctx.beginPath();ctx.moveTo(pm.sx-3,pm.gy);ctx.lineTo(pm.sx+3,pm.gy);ctx.stroke();
+      ctx.fillText(m+'m',pm.sx+8,pm.gy+3);
+    }
+  }
+
+  // ── AUT at origin (skip in drone-zoom mode) ──
+  if (!isDroneZoom) {
+    const aut = proj(0,0,0);
+    const as = aut.sc;
+    ctx.fillStyle='#3a6aaa';
+    ctx.fillRect(aut.sx-5*as,aut.gy-22*as,10*as,22*as);
+    ctx.strokeStyle='#4a80cc'; ctx.lineWidth=2.5*as;
+    ctx.beginPath(); ctx.moveTo(aut.sx,aut.gy-22*as); ctx.lineTo(aut.sx-16*as,aut.gy-34*as); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(aut.sx,aut.gy-22*as); ctx.lineTo(aut.sx+16*as,aut.gy-34*as); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(aut.sx,aut.gy-22*as); ctx.lineTo(aut.sx,aut.gy-40*as); ctx.stroke();
+    ctx.fillStyle='#6ab0ff';
+    ctx.beginPath(); ctx.arc(aut.sx,aut.gy-40*as,3*as,0,Math.PI*2); ctx.fill();
+    ctx.font='bold '+(9*as)+'px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('AUT (Rx)',aut.sx,aut.gy+14*as);
+  }
+
+  // ── Drone shadow on ground ──
+  const gnd = proj(s.x, s.y, 0);
+  ctx.fillStyle='rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.ellipse(gnd.sx,gnd.gy,18*gnd.sc,5*gnd.sc,0,0,Math.PI*2); ctx.fill();
+
+  // ── Drone ──
+  const dr = proj(s.x, s.y, alt);
+  const ds = dr.sc;
+
+  // Altitude line (ground to drone)
+  ctx.strokeStyle='rgba(81,207,102,0.3)'; ctx.lineWidth=1; ctx.setLineDash([2,2]);
+  ctx.beginPath(); ctx.moveTo(gnd.sx,gnd.gy); ctx.lineTo(dr.sx,dr.sy); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Draw drone body (pitched + yaw perspective)
+  ctx.save();
+  ctx.translate(dr.sx, dr.sy);
+  ctx.rotate(-pitch);
+  // Yaw foreshortening: cos(yaw) scales apparent width
+  const yawCos = Math.cos(s.yaw), yawSin = Math.sin(s.yaw);
+  const bwBase=38*ds, bh=9*ds, armBase=16*ds, pRBase=12*ds;
+  const bw = bwBase * Math.abs(yawCos) + bh * Math.abs(yawSin);
+  const bDepth = bwBase * Math.abs(yawSin) + bh * Math.abs(yawCos);
+  // Body (foreshortened by yaw)
+  ctx.fillStyle='#3a4a6a'; ctx.strokeStyle='#5a7aaa'; ctx.lineWidth=1.5*ds;
+  ctx.beginPath(); ctx.roundRect(-bw/2,-bDepth*0.15,bw,bh*0.8+bDepth*0.15,3*ds); ctx.fill(); ctx.stroke();
+  // 4 motor positions in drone frame, projected by yaw
+  // X-config: motors at 45° angles from arms
+  const motors = [
+    {lx:-1,ly:-1}, {lx:1,ly:-1}, // front-left, front-right
+    {lx:-1,ly:1},  {lx:1,ly:1}   // rear-left, rear-right
+  ];
+  motors.forEach(m => {
+    // Rotate motor position by yaw, project to screen
+    const mx = (m.lx * yawCos - m.ly * yawSin) * armBase;
+    const my = (m.lx * yawSin + m.ly * yawCos) * armBase * 0.5; // depth foreshortening
+    // Arm
+    ctx.strokeStyle='#5a7aaa'; ctx.lineWidth=2*ds;
+    ctx.beginPath(); ctx.moveTo(0,-2*ds); ctx.lineTo(mx,-5*ds+my); ctx.stroke();
+    // Propeller — radius varies with yaw projection
+    const pR = pRBase * (0.4 + 0.6*Math.abs(yawCos));
+    const pRy = 3*ds * (0.4 + 0.6*Math.abs(yawSin));
+    ctx.fillStyle='rgba(100,180,255,0.3)'; ctx.strokeStyle='#4fc3f7'; ctx.lineWidth=ds;
+    ctx.beginPath(); ctx.ellipse(mx,-6*ds+my,pR,Math.max(pRy,2*ds),0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  });
+  // Payload + probe
+  ctx.fillStyle='rgba(255,165,0,0.2)'; ctx.strokeStyle='#ffa726'; ctx.lineWidth=ds;
+  ctx.fillRect(-8*ds,bh/2+1,16*ds,6*ds); ctx.strokeRect(-8*ds,bh/2+1,16*ds,6*ds);
+  ctx.strokeStyle='#ffa726';
+  ctx.beginPath(); ctx.moveTo(0,bh/2+7*ds); ctx.lineTo(0,bh/2+18*ds); ctx.stroke();
+  ctx.fillStyle='#ff8f00';
+  ctx.beginPath(); ctx.moveTo(-3*ds,bh/2+18*ds); ctx.lineTo(3*ds,bh/2+18*ds);
+  ctx.lineTo(0,bh/2+22*ds); ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // ── RF link (skip in drone-zoom) ──
+  if (!isDroneZoom) {
+    const aut = proj(0,0,0);
+    const rfTop=dr.sy+22*ds, rfBot=aut.gy-22*aut.sc;
+    if(rfBot>rfTop+5){
+      ctx.strokeStyle='rgba(255,80,80,0.3)'; ctx.lineWidth=1; ctx.beginPath();
+      for(let i=0;i<=20;i++){const t=i/20;
+        const yy=rfTop+t*(rfBot-rfTop), xx=dr.sx+(aut.sx-dr.sx)*t+Math.sin(t*Math.PI*5)*2*ds;
+        i===0?ctx.moveTo(xx,yy):ctx.lineTo(xx,yy);} ctx.stroke();
+      ctx.fillStyle='rgba(255,80,80,0.35)'; ctx.font='6px sans-serif'; ctx.textAlign='left';
+      ctx.fillText('5.4 GHz',(dr.sx+aut.sx)/2+4,(rfTop+rfBot)/2);
+    }
+  }
+
+  // ── Roll indicator (follows drone) ──
+  const rR=12*ds;
+  ctx.strokeStyle='rgba(79,195,247,0.4)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(dr.sx,dr.sy-18*ds,rR,-Math.PI/2-0.5,-Math.PI/2+0.5); ctx.stroke();
+  ctx.strokeStyle='#ff6b6b'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(dr.sx,dr.sy-18*ds);
+  ctx.lineTo(dr.sx+Math.sin(roll)*rR,dr.sy-18*ds-Math.cos(roll)*rR); ctx.stroke();
+
+  // ── Yaw compass (top-right) ──
+  const cR=14, cX=w-28, cY=20;
+  ctx.strokeStyle='rgba(255,167,38,0.4)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(cX,cY,cR,0,Math.PI*2); ctx.stroke();
+  ctx.fillStyle='#7a8ba5'; ctx.font='6px sans-serif';
+  ctx.textAlign='center'; ctx.fillText('N',cX,cY-cR-2);
+  ctx.fillText('S',cX,cY+cR+7);
+  ctx.textAlign='right'; ctx.fillText('W',cX-cR-2,cY+2);
+  ctx.textAlign='left'; ctx.fillText('E',cX+cR+2,cY+2);
+  const yr=s.yaw;
+  ctx.strokeStyle='#ffa726'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(cX,cY);
+  ctx.lineTo(cX+Math.sin(yr)*(cR-2),cY-Math.cos(yr)*(cR-2)); ctx.stroke();
+  ctx.fillStyle='#ffa726'; ctx.font='bold 7px sans-serif'; ctx.textAlign='center';
+  ctx.fillText(yawDeg.toFixed(0)+'°',cX,cY+cR+14);
+
+  // ── Telemetry (top-left) ──
+  ctx.textAlign='left';
+  ctx.fillStyle='#4fc3f7'; ctx.font='bold 9px monospace';
+  ctx.fillText('3D VIEW', 8, 13);
+  // Auto-format distance: m / cm / mm based on magnitude
+  function fmtLen(v) {
+    const a = Math.abs(v);
+    if (a >= 1) return v.toFixed(2) + 'm';
+    if (a >= 0.01) return (v*100).toFixed(1) + 'cm';
+    return (v*1000).toFixed(1) + 'mm';
+  }
+  ctx.font='8px monospace';
+  [{l:'Alt',v:fmtLen(alt),c:'#51cf66'},
+   {l:'X(N)',v:fmtLen(s.x),c:'#4fc3f7'},
+   {l:'Y(E)',v:fmtLen(s.y),c:'#51cf66'},
+   {l:'Roll',v:(roll*180/Math.PI).toFixed(2)+'°',c:'#4fc3f7'},
+   {l:'Pitch',v:(pitch*180/Math.PI).toFixed(2)+'°',c:'#51cf66'},
+   {l:'Yaw',v:yawDeg.toFixed(1)+'°',c:'#ffa726'},
+  ].forEach((d,i)=>{
+    ctx.fillStyle='#7a8ba5'; ctx.fillText(d.l+':',8,25+i*11);
+    ctx.fillStyle=d.c; ctx.fillText(d.v,45,25+i*11);
+  });
+
+  // ── λ/16 box ──
+  ctx.strokeStyle='rgba(255,107,107,0.5)'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+  ctx.strokeRect(8,h-30,82,24); ctx.setLineDash([]);
+  ctx.fillStyle='#ff6b6b'; ctx.font='7px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('Required: λ/16',12,h-20);
+  ctx.font='bold 8px sans-serif';
+  ctx.fillText('= 3.47 mm',12,h-10);
+}
+
+function updateStats() {
+  const stats = sim.getStats();
+  const grid = qs('#statsGrid');
+  if(!stats){grid.innerHTML='<div class="stat"><span class="lbl">Collecting data...</span></div>';return;}
+  const lam16=0.00347;
+  const mk=(label,val,unit,warn)=>{
+    const cls=warn?'stat warn':'stat'+(val<=lam16?' good':'');
+    let display;
+    if(val>=1) display=val.toFixed(2)+' m';
+    else if(val>=0.01) display=(val*100).toFixed(1)+' cm';
+    else display=(val*1000).toFixed(2)+' mm';
+    return `<div class="${cls}"><div class="val">${display}</div><div class="lbl">${label}</div></div>`;
+  };
+  grid.innerHTML =
+    '<div class="stats-section-label">True (Physics)</div>'
+    + mk('σ_X',stats.sigmaX,'m',stats.sigmaX>lam16)
+    + mk('σ_Y',stats.sigmaY,'m',stats.sigmaY>lam16)
+    + mk('σ_Z',stats.sigmaZ,'m',stats.sigmaZ>lam16)
+    + mk('3D RMS',stats.rms3d,'m',stats.rms3d>lam16)
+    + '<div class="stats-section-label">Measured (GPS) QGroundControl</div>'
+    + mk('σ_X',stats.mSigmaX,'m',stats.mSigmaX>lam16)
+    + mk('σ_Y',stats.mSigmaY,'m',stats.mSigmaY>lam16)
+    + mk('σ_Z',stats.mSigmaZ,'m',stats.mSigmaZ>lam16)
+    + mk('3D RMS',stats.mRms3d,'m',stats.mRms3d>lam16)
+    + '<div class="stats-section-label">Reference</div>'
+    + mk('λ/16 target',lam16,'m',false)
+    + `<div class="stat${stats.rms3d>lam16?' warn':''}"><div class="val">${(stats.rms3d/lam16).toFixed(1)}×</div><div class="lbl">Gap (True)</div></div>`
+    + `<div class="stat${stats.mRms3d>lam16?' warn':''}"><div class="val">${(stats.mRms3d/lam16).toFixed(1)}×</div><div class="lbl">Gap (Meas)</div></div>`
+    + `<div class="stat"><div class="val">${sim.battVoltage.toFixed(2)}V / ${(sim.currentDraw||0).toFixed(1)}A</div><div class="lbl">Batt V / I</div></div>`;
+}
+
+// ── Presets ─────────────────────────────────────────────────────────
+function presetOriginal() {
+  resetSim();
+  sim.sensors.gpsMode='standard'; sim.sensors.compassMode='interfered';
+  hideZoom();
+  sim.sensors.vibrationMode = 'baseline';
+  qs('#tGPS').className='toggle off';qs('#tGPS').textContent='GPS: Standard';
+  qs('#tCompass').className='toggle off';qs('#tCompass').textContent='Compass: Interfered';
+  sim.wind.steadySpeed=0; sim.wind.gustIntensity=0;
+  sim.fc.targetPos.z = -5.8;
+  // Restore original CoG offsets (unbalanced payload)
+  DRONE.payloadOffsetX = 0;
+  DRONE.payloadOffsetY = 0;
+}
+function presetRTK() {
+  resetSim();
+  // 1. COMPASS FIX — no EMI interference (sig gen shielded or removed)
+  sim.sensors.compassMode='good';
+  sim.sensors.compassDrift = 0;
+  sim.sensors.headingBias = 0;
+  qs('#tCompass').className='toggle on';qs('#tCompass').textContent='Compass: Good';
+
+  // 2. CoG FIX — weight distribution corrected (balanced payload mount)
+  DRONE.payloadOffsetX = 0;
+  DRONE.payloadOffsetY = 0;
+  // payloadOffsetZ stays 0.08 (hanging below is physical, not a problem)
+
+  // 3. RTK GPS — u-blox F9P RTK-Fix: σ_h=2cm, σ_v=3cm, 10Hz, HDOP=0.1
+  sim.sensors.gpsMode='rtk';
+  showZoom();
+  qs('#tGPS').className='toggle on';qs('#tGPS').textContent='GPS: RTK';
+
+  // 4. EKF convergence — with good compass + RTK, EKF converges properly
+  //    (handled automatically: ekfGood = compassMode==='good' && gpsMode==='rtk')
+
+  // 5. Vibration fix — balanced props, good ESC cal, corrected CoG
+  //    x=3.0, y=2.8, z=6.0 m/s² (all well under 15 m/s² threshold)
+  sim.sensors.vibrationMode = 'fixed';
+
+  // Environment: calm conditions for baseline RTK test
+  sim.wind.steadySpeed=0; sim.wind.gustIntensity=0;
+  sim.fc.targetPos.z = -5.8;
+}
+
+function toggleGPS(el) {
+  if(sim.sensors.gpsMode==='rtk'){sim.sensors.gpsMode='standard';el.className='toggle off';el.textContent='GPS: Standard';hideZoom();}
+  else{sim.sensors.gpsMode='rtk';el.className='toggle on';el.textContent='GPS: RTK';showZoom();}
+}
+function showZoom(){qs('#zoomWrap').style.display='flex';}
+function hideZoom(){qs('#zoomWrap').style.display='none';view3dZoom=false;qs('#zoomBtn').className='zbtn';qs('#zoomDroneBtn').className='zbtn';}
+function toggleCompass(el) {
+  if(sim.sensors.compassMode==='good'){sim.sensors.compassMode='interfered';el.className='toggle off';el.textContent='Compass: Interfered';}
+  else{sim.sensors.compassMode='good';sim.sensors.compassDrift=0;el.className='toggle on';el.textContent='Compass: Good';}
+}
+function togglePlay() {
+  playing=!playing;
+  qs('#btnPlay').textContent=playing?'⏸ Pause':'▶ Play';
+  qs('#btnPlay').className=playing?'active':'';
+}
+function resetSim() {
+  sim.reset();
+  sim.fc.targetPos={x:0,y:0,z:-5.8};
+}
+function saveCSV() {
+  if(sim.csvLog.length < 2) { alert('Run the simulation for a few seconds first.'); return; }
+  const csv = sim.generateCSV();
+  const now = new Date();
+  const fname = 'sim_' + now.getFullYear() + '-' +
+    String(now.getMonth()+1).padStart(2,'0') + '-' +
+    String(now.getDate()).padStart(2,'0') + '_' +
+    String(now.getHours()).padStart(2,'0') + '-' +
+    String(now.getMinutes()).padStart(2,'0') + '-' +
+    String(now.getSeconds()).padStart(2,'0') + '.csv';
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = fname;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  alert('Log saved: ' + fname + ' (' + sim.csvLog.length + ' rows)\nMove it to DroneMarkI/logFiles/ for archival.');
+}
+
+// ── Main Loop ──────────────────────────────────────────────────────
+let lastFrame = 0;
+function loop(ts) {
+  if(!lastFrame) lastFrame = ts;
+  const frameDt = Math.min((ts-lastFrame)/1000, 0.05);
+  lastFrame = ts;
+
+  if(playing) {
+    sim.advance(frameDt * simSpeed, 500); // 500Hz physics
+  }
+
+  drawTopView();
+  drawPlot(cvPos, 'Position (m) vs Time', [
+    {label:'X(N)',color:'#4fc3f7',fn:h=>h.x},
+    {label:'Y(E)',color:'#51cf66',fn:h=>h.y},
+    {label:'Z(alt)',color:'#ffa726',fn:h=>-h.z},
+  ], 60);
+  drawPlot(cvAtt, 'Attitude (°) vs Time', [
+    {label:'Roll',color:'#4fc3f7',fn:h=>h.roll},
+    {label:'Pitch',color:'#51cf66',fn:h=>h.pitch},
+    {label:'Yaw',color:'#ffa726',fn:h=>h.yaw},
+  ], 60);
+  drawMotors();
+  drawSideView();
+  updateStats();
+
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('load', ()=>{
+  initCanvases();
+  window.addEventListener('resize', initCanvases);
+  showZoom(); // RTK+Fix is default preset
+  requestAnimationFrame(loop);
+});
+</script>
+</body>
+</html>

@@ -432,7 +432,7 @@ class QuadSim {
     this.temp1 = 47.0;
     this.temp2 = 52.6;
     // Start time for timestamps
-    this.startDate = new Date('2026-02-16T12:59:55.890');
+    this.startDate = new Date(); // use current real date/time
     // Cumulative flight distance
     this.flightDist = 0;
     this.prevPos = {x:0,y:0,z:0};
@@ -468,6 +468,7 @@ class QuadSim {
     this.temp2 = 52.6;
     this.flightDist = 0;
     this.prevPos = {x:0,y:0,z:0};
+    this.startDate = new Date();
   }
 
   step(dt) {
